@@ -486,21 +486,27 @@ function showDetails(b,{banner='',body='',title=''}={}){const panel=$('boothDeta
 function closeDetails(){const panel=$('boothDetailPanel');panel.dataset.open='false';document.body.classList.remove('detail-open');syncDetailPresentation();$('detailPanelTitle').textContent='어떤 부스가 궁금한가요?';$('detail').innerHTML='<div class="detail-placeholder">교실에 들어가거나 부스를 선택하면<br>이곳에 설명이 표시됩니다.</div>';document.dispatchEvent(new Event('studentdetailclose'));}
 function renderDetail(){const b=DATA.booths.find(b=>b.id===selected);$('selectedInfoBtn').hidden=!b;if(b){const banner=$('detail').querySelector('.room-entry-banner')?.outerHTML||'',inside=!!banner;$('detail').innerHTML=banner+detailHTML(b)+(inside?'<button class="room-exit" data-exit-room>교실에서 나가기 · Esc</button>':'');$('detailPanelTitle').textContent=b.title;}}
 function selectBooth(id,{modal=false,hash=true}={}){document.dispatchEvent(new Event('explorer-stop'));if(activeTab==='explore')closeDetails();const b=DATA.booths.find(b=>b.id===id);if(!b)return;selected=id;const r=DATA.places.find(r=>r.id===b.placeId);if(r){if(floor!==r.floor)setFloor(r.floor);if(innerWidth<=700){zoom=2.7;const focus=P(r.x+r.width/2,r.y+r.height/2);pan={x:zoom*(700-focus.x),y:zoom*(350-focus.y)};}renderMap();walkTo(r)}else if(b.floor){setFloor(b.floor);toast(b.floor+'층 · '+b.locationLabel+'입니다. 현장 안내를 확인해 주세요.');}else toast('현장 안내를 확인해 주세요.');renderLists();renderDetail();if(activeTab==='explore')showDetails(b);if(modal&&activeTab!=='explore'){setTab('explore');showDetails(b);$('boothDetailPanel').scrollIntoView({block:'start',behavior:'smooth'})}if(hash)replaceHash('booth/'+id);}
-function replaceHash(h){try{history.replaceState(null,'','#'+h)}catch(e){location.hash=h}}
+// file:// pages in Chrome reject replaceState; remember our own hash writes so they do not re-run readHash
+// (which used to send the explorer back to the homebase and close the teacher editor).
+let selfHash=null;
+function replaceHash(h){try{history.replaceState(null,'','#'+h)}catch(e){if(location.hash==='#'+h)return;selfHash='#'+h;location.hash=h}}
 // This local gate prevents accidental editing. No login state is stored or exported.
 let teacherUnlocked=false,teacherEditTarget=null;
 function requestTeacherAccess(editId){teacherEditTarget=editId;$('teacherAccessForm').reset();$('teacherPasswordMessage').textContent='';$('teacherPassword').removeAttribute('aria-invalid');if(!$('teacherAccess').open)$('teacherAccess').showModal();$('teacherPassword').focus();}
 function setTab(tab,editId=null){if(!['explore','list','editor'].includes(tab))return false;if(tab==='editor'&&!teacherUnlocked){document.dispatchEvent(new Event('explorer-stop'));requestTeacherAccess(editId);return false;}if(tab!=='editor')teacherUnlocked=false;document.dispatchEvent(new Event('explorer-stop'));if(tab!=='explore'&&$('boothDetailPanel').dataset.open==='true')closeDetails();activeTab=tab;document.querySelectorAll('.panel').forEach(p=>p.hidden=p.id!==tab);document.querySelectorAll('[data-tab]').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));if(tab==='list')renderLists();if(tab==='editor')loadEditor(editId||selected||DATA.booths[0]?.id);if(tab==='explore')renderMap();return true;}
 $('teacherAccessCancel').onclick=()=>$('teacherAccess').close();
 $('teacherAccess').addEventListener('close',()=>{teacherEditTarget=null;$('teacherAccessForm').reset();});
-$('teacherAccessForm').onsubmit=e=>{e.preventDefault();const field=$('teacherPassword');if(field.value!=='wntjd28'){field.setAttribute('aria-invalid','true');$('teacherPasswordMessage').textContent='비밀번호가 맞지 않습니다. 다시 입력해 주세요.';field.select();return;}const id=teacherEditTarget;teacherUnlocked=true;$('teacherAccess').close();setTab('editor',id);$('teacherLock').focus();};
+// Accept the password typed with the Korean IME on (주성28 ↔ wntjd28) and stray spaces or caps.
+function qwertyFromHangul(v){const C='rRseEfaqQtTdwWczxvg',V=['k','o','i','O','j','p','u','P','h','hk','ho','hl','y','n','nj','np','nl','b','m','ml','l'],J=['','r','R','rt','s','sw','sg','e','f','fr','fa','fq','ft','fx','fv','fg','a','q','qt','t','T','d','w','c','z','x','v','g'],JAMO={'ㄱ':'r','ㄲ':'R','ㄴ':'s','ㄷ':'e','ㄸ':'E','ㄹ':'f','ㅁ':'a','ㅂ':'q','ㅃ':'Q','ㅅ':'t','ㅆ':'T','ㅇ':'d','ㅈ':'w','ㅉ':'W','ㅊ':'c','ㅋ':'z','ㅌ':'x','ㅍ':'v','ㅎ':'g','ㅏ':'k','ㅐ':'o','ㅑ':'i','ㅒ':'O','ㅓ':'j','ㅔ':'p','ㅕ':'u','ㅖ':'P','ㅗ':'h','ㅛ':'y','ㅜ':'n','ㅠ':'b','ㅡ':'m','ㅣ':'l'};return [...String(v)].map(ch=>{const c=ch.charCodeAt(0)-0xAC00;if(c>=0&&c<11172)return C[Math.floor(c/588)]+V[Math.floor(c%588/28)]+J[c%28];return JAMO[ch]||ch;}).join('');}
+function teacherPasswordOK(v){const t=String(v||'').replace(/\s+/g,'');return t==='wntjd28'||qwertyFromHangul(t).toLowerCase()==='wntjd28'||t.toLowerCase()==='wntjd28';}
+$('teacherAccessForm').onsubmit=e=>{e.preventDefault();const field=$('teacherPassword');if(!teacherPasswordOK(field.value)){field.setAttribute('aria-invalid','true');$('teacherPasswordMessage').textContent='비밀번호가 맞지 않습니다. 다시 입력해 주세요. (한/영 상태와 관계없이 입력할 수 있어요)';field.select();return;}const id=teacherEditTarget;teacherUnlocked=true;$('teacherAccess').close();setTab('editor',id);$('teacherLock').focus();};
 $('teacherLock').onclick=()=>{setTab('explore');document.querySelector('[data-tab="editor"]').focus();};
 document.addEventListener('click',e=>{const t=e.target.closest('button,[data-room]');if(!t)return;if(t.dataset.tab)setTab(t.dataset.tab);if(t.dataset.floor){setFloor(Number(t.dataset.floor));replaceHash('floor/'+floor)}if(t.dataset.booth)selectBooth(t.dataset.booth);if(t.dataset.card)selectBooth(t.dataset.card,{modal:true});if(t.dataset.room){const r=DATA.places.find(r=>r.id===t.dataset.room),b=DATA.booths.find(b=>b.placeId===t.dataset.room);if(r?.id===window.JusungNavigation.fieldDoorId){window.schoolExplorer.goToFieldDoor();return;}if(r&&window.JusungInteraction.restricted(r)){window.schoolExplorer.travelToRoom(r.id);toast(r.name+'은 관리자만 출입할 수 있어요.');return;}if(b)selectBooth(b.id);else{if(r)walkTo(r);toast((r?.name||'이 공간')+'에는 등록된 부스가 없습니다.')}}if(t.dataset.favorite){favorite(t.dataset.favorite);if($('readingDialog').open)$('readingDialog').innerHTML=detailHTML(DATA.booths.find(b=>b.id===t.dataset.favorite),true)}if(t.hasAttribute('data-exit-room'))closeDetails();if(t.hasAttribute('data-close'))$('readingDialog').close();if(t.dataset.showMap){if(DATA.booths.find(b=>b.id===t.dataset.showMap)?.zone==='outdoor'){$('readingDialog').close();window.FestivalBoothSystem.openOutdoor();return;}$('readingDialog').close();setTab('explore');selectBooth(t.dataset.showMap);window.schoolExplorer.enterBooth(t.dataset.showMap);$('scene').scrollIntoView({behavior:'smooth',block:'center'})}if(t.dataset.copy){const link=location.href.split('#')[0]+'#booth/'+t.dataset.copy;const done=()=>toast(location.protocol==='file:'?'로컬 파일 링크를 복사했습니다. 파일을 함께 전달해야 다른 기기에서 열 수 있어요.':'부스 링크를 복사했습니다.');if(navigator.clipboard)navigator.clipboard.writeText(link).then(done).catch(()=>toast('클립보드 사용이 제한되어 있습니다. 주소창의 링크를 복사해 주세요.'));else toast('주소창의 링크를 복사해 주세요.');}if(t.dataset.move)move(t.dataset.move)});
 document.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))return;if((e.target.dataset?.room||e.target.dataset?.stair)&&(e.key==='Enter'||e.key===' ')){e.preventDefault();e.target.click();return}if(activeTab==='explore'&&!$('sourceDialog').open&&!$('readingDialog').open){const dir={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'}[e.key];if(dir){e.preventDefault();move(dir)}}});
 function move(dir){if(movingFrame)cancelAnimationFrame(movingFrame);const d={left:[-1.7,0],right:[1.7,0],up:[0,-1.7],down:[0,1.7]}[dir];player.x=Math.max(0,Math.min(MAP_W,player.x+d[0]));player.y=Math.max(0,Math.min(MAP_H,player.y+d[1]));renderAvatar()}
 for(const id of ['search','buildingFilter','floorFilter','categoryFilter','listSearch','listFloor','listCategory'])$(id).addEventListener(id.toLowerCase().includes('search')?'input':'change',()=>{renderLists();renderMap()});$('resetFilters').onclick=()=>{for(const id of ['search','buildingFilter','floorFilter','categoryFilter'])$(id).value='';renderLists();renderMap()};$('favoritesOnly').onclick=()=>{showFav=!showFav;$('favoritesOnly').classList.toggle('active',showFav);renderLists()};$('isoBtn').onclick=()=>{mode='iso';zoom=1;pan={x:0,y:0};renderMap()};$('flatBtn').onclick=()=>{mode='flat';zoom=1;pan={x:0,y:0};renderMap()};$('zoomIn').onclick=()=>{zoom=Math.min(3.5,zoom+.25);renderMap()};$('zoomOut').onclick=()=>{zoom=Math.max(.6,zoom-.25);renderMap()};$('zoomReset').onclick=()=>{zoom=1;pan={x:0,y:0};renderMap()};$('fullscreenBtn').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('scene').requestFullscreen()}catch(e){toast('이 브라우저는 전체화면을 지원하지 않습니다. 확대 버튼을 사용해 주세요.')}};
 let drag=null;$('mapSvg').addEventListener('pointerdown',e=>{if(e.target.closest('[data-room]'))return;drag={x:e.clientX,y:e.clientY,px:pan.x,py:pan.y};$('mapSvg').setPointerCapture(e.pointerId)});$('mapSvg').addEventListener('pointermove',e=>{if(!drag)return;const rect=$('mapSvg').getBoundingClientRect();pan={x:drag.px+(e.clientX-drag.x)*1400/rect.width,y:drag.py+(e.clientY-drag.y)*700/rect.height};renderMap()});for(const ev of ['pointerup','pointercancel'])$('mapSvg').addEventListener(ev,()=>drag=null);
-$('selectedInfoBtn').onclick=()=>{const b=DATA.booths.find(b=>b.id===selected);if(b)showDetails(b)};$('detailBackdrop').onclick=closeDetails;$('sourceBtn').onclick=()=>$('sourceDialog').showModal();$('sourceDialog').querySelector('.dialogclose').onclick=()=>$('sourceDialog').close();function readHash(){let parts;try{parts=decodeURIComponent(location.hash.slice(1)).split('/')}catch(e){toast('주소의 부스 링크 형식을 확인해 주세요.');return}const [kind,id]=parts;if(kind==='booth'){const b=DATA.booths.find(b=>b.id===id);if(b){setTab('explore');selectBooth(id,{hash:false})}else toast('해당 부스를 찾을 수 없습니다.')}else if(kind==='floor'&&[1,2,3,4].includes(Number(id))){setTab('explore');setFloor(Number(id));$('floorFilter').value=id;renderLists()}}
+$('selectedInfoBtn').onclick=()=>{const b=DATA.booths.find(b=>b.id===selected);if(b)showDetails(b)};$('detailBackdrop').onclick=closeDetails;$('sourceBtn').onclick=()=>$('sourceDialog').showModal();$('sourceDialog').querySelector('.dialogclose').onclick=()=>$('sourceDialog').close();function readHash(){if(selfHash&&location.hash===selfHash){selfHash=null;return;}selfHash=null;let parts;try{parts=decodeURIComponent(location.hash.slice(1)).split('/')}catch(e){toast('주소의 부스 링크 형식을 확인해 주세요.');return}const [kind,id]=parts;if(kind==='booth'){const b=DATA.booths.find(b=>b.id===id);if(b){setTab('explore');selectBooth(id,{hash:false})}else toast('해당 부스를 찾을 수 없습니다.')}else if(kind==='floor'&&[1,2,3,4].includes(Number(id))){setTab('explore');setFloor(Number(id));$('floorFilter').value=id;renderLists()}}
 
 $('editCategory').innerHTML=categories.map(c=>'<option>'+escapeHTML(c)+'</option>').join('');
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(DATA));storageOK=true;return true}catch(e){storageOK=false;return false}}
@@ -510,7 +516,7 @@ function saved(){document.dispatchEvent(new Event('explorer-stop'));MAP_W=DATA.m
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),5000)}
 function exportGuide(){const doc=document.documentElement.cloneNode(true);{/* Runtime dialogs appended after the scripts are rebuilt on load; drop them so a saved copy has no duplicates. */const body=doc.querySelector('body'),scripts=body.querySelectorAll(':scope>script'),last=scripts[scripts.length-1];if(last)while(last.nextElementSibling)last.nextElementSibling.remove();doc.querySelectorAll('.facility-guide,#noticeBoardLinks,#planPrintSheet').forEach(e=>e.remove());}doc.querySelector('#seed-data').textContent=JSON.stringify(DATA).replace(/</g,'\\u003c');for(const d of doc.querySelectorAll('dialog'))d.removeAttribute('open');doc.querySelector('#boothDetailPanel')?.setAttribute('data-open','false');doc.querySelector('.maparea')?.removeAttribute('inert');doc.querySelector('body').classList.remove('detail-open','travel-wide','interior-open');doc.querySelector('#detailBackdrop').hidden=true;doc.querySelector('#mapHelp')?.setAttribute('hidden','');doc.querySelector('#toast').hidden=true;doc.querySelector('#editor').hidden=true;doc.querySelector('#explore').hidden=false;download(new Blob(['<!doctype html>\n'+doc.outerHTML],{type:'text/html;charset=utf-8'}),'주성축제_웹안내장.html');toast('안내장 다운로드를 요청했습니다. 다운로드 폴더에서 파일을 확인해 주세요.')}
 $('guideForm').onsubmit=e=>{e.preventDefault();DATA.guideDescription=$('editGuideDescription').value.trim();saved();$('guideSaveStatus').textContent=storageOK?'웹앱 설명을 이 브라우저에 저장했습니다.':'현재 화면에 반영했습니다. 파일로 저장해 보관하세요.';};$('editBooth').onchange=()=>loadEditor($('editBooth').value);$('editPlace').onchange=()=>{const r=DATA.places.find(r=>r.id===$('editPlace').value);if(r)$('editLocation').value=r.name;};
-$('editForm').onsubmit=e=>{e.preventDefault();const b=DATA.booths.find(b=>b.id===$('editBooth').value),r=DATA.places.find(r=>r.id===$('editPlace').value);if(!b)return;const changes={activitySteps:$('editActivitySteps').value.split('\n').map(x=>x.trim()).filter(Boolean),summary:$('editSummary').value.trim(),highlights:$('editHighlights').value.split('\n').map(x=>x.trim()).filter(Boolean),title:$('editTitle').value.trim(),description:$('editDescription').value.trim(),activity:$('editActivity').value.trim(),locationLabel:$('editLocation').value.trim(),category:$('editCategory').value,status:$('editState').value,placeId:r?.id||null,floor:r?.floor||null,building:r?.building||'위치 확인 예정',teacher:maskNames($('editTeacher').value.trim()),students:maskNames($('editStudents').value.trim()),hours:$('editHours').value.trim()||'운영 시간 확인 예정',participation:$('editParticipation').value.trim(),warnings:$('editWarnings').value.split('\n').map(x=>x.trim()).filter(Boolean),updatedAt:new Date().toISOString()};if(!changes.title||!changes.description||!changes.activity){toast('부스 이름, 소개, 주요 활동을 입력해 주세요.');return}if(changes.activitySteps.length>6||changes.activitySteps.some(x=>x.length>180)){toast('핵심 활동은 최대 6단계, 한 단계당 180자 이하로 입력해 주세요.');return}if(changes.highlights.length>3||changes.highlights.some(x=>x.length>400)){toast('활동 요약은 최대 3개, 각 400자 이하로 입력해 주세요.');return}Object.assign(b,changes);selected=b.id;saved();loadEditor(b.id);};$('noticeForm').onsubmit=e=>{e.preventDefault();DATA.date=$('editDate').value.trim()||'축제 날짜 확인 예정';DATA.hours=$('editFestivalHours').value.trim()||'운영 시간 확인 예정';DATA.notices=$('editNotices').value.split('\n').map(x=>x.trim()).filter(Boolean);saved()};$('downloadGuide').onclick=exportGuide;$('exportData').onclick=()=>download(new Blob([JSON.stringify(DATA,null,2)],{type:'application/json'}),'주성축제_안내장데이터.json');$('importData').onclick=()=>$('dataFile').click();$('dataFile').onchange=async()=>{const file=$('dataFile').files[0];if(!file)return;try{if(file.size>5000000)throw Error('5MB 이하의 데이터 파일을 사용해 주세요.');const d=JSON.parse(await file.text());validateData(d);for(const b of d.booths){b.teacher=maskNames(b.teacher);b.students=maskNames(b.students)}document.dispatchEvent(new Event('explorer-stop'));DATA=d;selected=DATA.booths[0]?.id||null;saved();loadEditor(selected);toast('데이터를 불러왔습니다.')}catch(e){$('editorStatus').classList.add('error');$('editorStatus').textContent='불러오기 실패: '+e.message}finally{$('dataFile').value=''}};$('resetData').onclick=()=>{if(!confirm('현재 변경 내용을 지우고 처음 안내장 내용으로 돌아갈까요?'))return;DATA=clone(SEED);selected=null;saved();loadEditor(DATA.booths[0]?.id);$('selectedInfoBtn').hidden=true;closeDetails()};
+$('editForm').onsubmit=e=>{e.preventDefault();const b=DATA.booths.find(b=>b.id===$('editBooth').value),r=DATA.places.find(r=>r.id===$('editPlace').value);if(!b)return;const changes={activitySteps:$('editActivitySteps').value.split('\n').map(x=>x.trim()).filter(Boolean),summary:$('editSummary').value.trim(),highlights:$('editHighlights').value.split('\n').map(x=>x.trim()).filter(Boolean),title:$('editTitle').value.trim(),description:$('editDescription').value.trim(),activity:$('editActivity').value.trim(),locationLabel:$('editLocation').value.trim(),category:$('editCategory').value,status:$('editState').value,placeId:r?.id||null,floor:r?.floor||null,building:r?.building||'위치 확인 예정',teacher:maskNames($('editTeacher').value.trim()),students:maskNames($('editStudents').value.trim()),hours:$('editHours').value.trim()||'운영 시간 확인 예정',participation:$('editParticipation').value.trim(),warnings:$('editWarnings').value.split('\n').map(x=>x.trim()).filter(Boolean),updatedAt:new Date().toISOString()};if(!changes.title||!changes.description||!changes.activity){toast('부스 이름, 소개, 주요 활동을 입력해 주세요.');return}if(changes.activitySteps.length>6||changes.activitySteps.some(x=>x.length>180)){toast('핵심 활동은 최대 6단계, 한 단계당 180자 이하로 입력해 주세요.');return}if(changes.highlights.length>3||changes.highlights.some(x=>x.length>400)){toast('활동 요약은 최대 3개, 각 400자 이하로 입력해 주세요.');return}Object.assign(b,changes);selected=b.id;saved();loadEditor(b.id);};$('noticeForm').onsubmit=e=>{e.preventDefault();DATA.date=$('editDate').value.trim()||'축제 날짜 확인 예정';DATA.hours=$('editFestivalHours').value.trim()||'운영 시간 확인 예정';DATA.notices=$('editNotices').value.split('\n').map(x=>x.trim()).filter(Boolean);saved()};$('downloadGuide').onclick=exportGuide;$('exportData').onclick=()=>download(new Blob([JSON.stringify(DATA,null,2)],{type:'application/json'}),'주성축제_안내장데이터.json');$('importData').onclick=()=>$('dataFile').click();$('dataFile').onchange=async()=>{const file=$('dataFile').files[0];if(!file)return;try{if(file.size>5000000)throw Error('5MB 이하의 데이터 파일을 사용해 주세요.');const d=JSON.parse(await file.text());validateData(d);for(const b of d.booths){b.teacher=maskNames(b.teacher);b.students=maskNames(b.students)}document.dispatchEvent(new Event('explorer-stop'));DATA=d;selected=DATA.booths[0]?.id||null;saved();loadEditor(selected);toast('데이터를 불러왔습니다.')}catch(e){$('editorStatus').classList.add('error');$('editorStatus').textContent='불러오기 실패: '+e.message}finally{$('dataFile').value=''}};$('resetData').onclick=()=>{const btn=$('resetData');if(!btn.dataset.armed){btn.dataset.armed='1';btn.textContent='한 번 더 누르면 원본으로 복원돼요';clearTimeout(btn._t);btn._t=setTimeout(()=>{delete btn.dataset.armed;btn.textContent='원본 내용으로 복원';},5000);return;}delete btn.dataset.armed;btn.textContent='원본 내용으로 복원';DATA=clone(SEED);selected=null;saved();loadEditor(DATA.booths[0]?.id);$('selectedInfoBtn').hidden=true;closeDetails()};
 
 document.addEventListener('click',e=>{const b=e.target.closest('[data-edit]');if(b){$('readingDialog').close();setTab('editor',b.dataset.edit)}});
 
@@ -801,7 +807,10 @@ window.FestivalArchitecture=(()=>{
    const side=JusungNavigation.door(DATA,r).side,across=side==='north'||side==='south';
    const outer=side==='north'?y:side==='south'?y+h:side==='west'?x:x+w;
    const start=(across?x:y)+(across?w:h)*.2,length=(across?w:h)*.6;
-   item(.06,.06,.88,.88,2.12,'#afbdbc');
+   // Low shaft walls (not a solid block) so the lift reads as doors in a wall
+   // and never hides the corridor; the stainless doors and call button stay tall.
+   item(.06,.06,.88,.88,.03,'#c9cfcf');
+   for(const [u,v,a,b2] of [[.06,.06,.88,.06],[.06,.88,.88,.06],[.06,.06,.06,.88],[.88,.06,.06,.88]])item(u,v,a,b2,.9,'#d9d4c6');
    for(let j=0;j<2;j++){
     const p=start+j*length/2,span=length/2-.035;
     if(across)box(p,outer-.05,base+.04,span,.10,2.01,'#d6e2e1');
@@ -1736,6 +1745,7 @@ function facade(x,y,z,w,h,levels,material){
   // The gym-side entrance is part of the bridge landing, not a separate room.
   const rooms=DATA.places.filter(r=>r.id!==stage?.id&&r.id!==bridgeConnector&&r.id!=='room-f2-r80-c54'&&r.kind!=='bridge'&&r.floor===f&&!['stair-fragment','floor-label'].includes(r.kind)&&(r.width>=1.4||r.kind==='waterstation')&&r.name.length>1&&r.kind!=='stairs');
   const nearby=interactionTarget()?.room?.id;
+  const playerDepth=dot(sub(worldPoint(V(player.x-MAP_W/2,player.y-MAP_H/2,z)),camera.pos),camera.forward);
   for(const r of rooms){
    if(previewRoom&&r.id!==previewRoom.id){renderTier=0;box(r.x-MAP_W/2,r.y-MAP_H/2,z+deck-.22,r.width-.1,r.height-.1,.22,'#e2ded2');continue;}
    const b=DATA.booths.find(b=>b.placeId===r.id),active=!!b&&b.id===selected,here=nearby===r.id;
@@ -1769,7 +1779,10 @@ function facade(x,y,z,w,h,levels,material){
       const opening=fieldEntrance?JusungNavigation.fieldDoor(DATA).opening:door.opening??(door.bridgeLink?1.34:door.homeLink?.88:.68);
       const lo=Math.max(0,Math.min(length-opening,mark-start-opening/2));
       const farSide=side===(camera.pos.y/PLAN_METERS>y+h/2?'north':'south');
-      const height=walkCamera&&farSide&&!gap&&r.kind!=='entrance'?1.85:H;
+      // Cutaway: only walls beyond the explorer stand tall, so nothing between the
+      // camera and the character hides the corridor.
+      const mid=across?V(start+length/2,at,z):V(at,start+length/2,z),beyond=dot(sub(worldPoint(mid),camera.pos),camera.forward)>playerDepth+1.2;
+      const height=walkCamera&&farSide&&beyond&&!gap&&r.kind!=='entrance'?1.85:H;
       const timber=learningRoom&&gap, glazed=frontGlazing&&side==='west';
       const rail=(a,n,from,high,color,alpha=1,inset=0)=>{
        if(across)box(start+a,at+inset,z+deck+from,n,t,high,color,null,alpha);
@@ -1861,10 +1874,21 @@ function facade(x,y,z,w,h,levels,material){
   }
   for(const board of DATA.noticeBoards.filter(b=>!previewRoom&&b.floor===f&&!b.id.startsWith('gym-'))){
    const x=board.x-MAP_W/2,y=board.y-MAP_H/2;
-   box(x-.05,y,z+.15,.1,.1,1.0,'#788f80');box(x-.8,y-.05,z+1.15,1.6,.14,.9,board.type==='performance'?'#8eaabf':'#e4c77d',{type:'notice',id:board.id,floor:f});
+   // A recognisable standing notice board: two legs, framed white board,
+   // coloured header strip and pinned posters, with its title as a label.
+   {const hit={type:'notice',id:board.id,floor:f},head=board.type==='performance'?'#6f8fc4':'#d9822b',deck=z+JusungNavigation.surface;
+    for(const dx of [-.62,.52])box(x+dx,y,deck,.08,.08,1.05,'#8a8f8c');
+    box(x-.7,y-.04,deck+.62,1.4,.08,.86,'#9b8a72',hit);box(x-.66,y-.07,deck+.66,1.32,.04,.72,'#fbf8ef',hit);box(x-.66,y-.075,deck+1.24,1.32,.045,.14,head,hit);
+    for(let k=0;k<3;k++)box(x-.58+k*.42,y-.08,deck+.74,.32,.03,.4,['#f6c9b8','#cfe3d6','#f3e3a8'][k],hit);
+    label('📋 '+board.title,V(x,y,deck+1.6),{priority:44,hit,compact:true});}
    
   }
-  renderLayer=f-.25;window.JusungNavigation.draw(DATA,f,z,{box,label,V,poly,mapWidth:MAP_W,mapHeight:MAP_H});
+  renderLayer=f-.25;
+  // Every walkable lane gets a floor, so the explorer never walks over bare ground
+  // where the plan's corridor strips leave gaps (lanes, door spurs, landings).
+  {const deckZ=z+JusungNavigation.surface-.002,half=.78;for(const sg of JusungNavigation.segments(DATA,f)){const a=sg[0]||sg.a,b2=sg[1]||sg.b;if(!a||!b2)continue;const dx=b2.x-a.x,dy=b2.y-a.y,l=Math.hypot(dx,dy)||1,nx=-dy/l*half,ny=dx/l*half,ex=dx/l*half*.6,ey=dy/l*half*.6;
+   poly([V(a.x-ex+nx-MAP_W/2,a.y-ey+ny-MAP_H/2,deckZ),V(b2.x+ex+nx-MAP_W/2,b2.y+ey+ny-MAP_H/2,deckZ),V(b2.x+ex-nx-MAP_W/2,b2.y+ey-ny-MAP_H/2,deckZ),V(a.x-ex-nx-MAP_W/2,a.y-ey-ny-MAP_H/2,deckZ)],'#eeebe2',{tier:0});}}
+  window.JusungNavigation.draw(DATA,f,z,{box,label,V,poly,mapWidth:MAP_W,mapHeight:MAP_H});
   if(closeView)for(const s of JusungNavigation.corridorStrips(DATA,f))if(!s.guide&&nearPlayer({x:s.x,y:s.y,width:s.w,height:s.h}))tileGrid(s.x-MAP_W/2,s.y-MAP_H/2,s.w,s.h,z+deck+.003,'#eeebe2',.72);
   renderLayer=f;renderTier=1;
   if(!walkCamera){const l=window.JusungNavigation.lanes(f);
@@ -2268,6 +2292,28 @@ function facade(x,y,z,w,h,levels,material){
    };
    const tray=(u,v,paint)=>prop(u,v,.945,.087,.062,.075,paint);
    const display=(u,v,paint)=>{prop(u,v,.94,.096,.052,.07,steel);prop(u,v+.009,1.01,.096,.034,.34,paint);};
+   // Classroom shell like the reference app: back lockers, teacher desk and TV by
+   // the board, desks pushed into a corner, paper bunting and a booth rug/sign.
+   if(room.kind==='classroom'||/^(영어|수학|과학)[1-3]실$|^(기술|가정)실$|미디어스페이스/.test(room.name)){
+    const side=((typeof window!=='undefined'&&window.JusungNavigation?.door(DATA,room))||{}).side,booth=DATA.booths.find(b=>b.placeId===room.id),accent=(typeof palette==='function'&&booth?palette(booth)[1]:'#e9dcc0');
+    prop(.2,.16,.141,.6,.68,.006,accent);
+    if(side!=='east')for(let k=0;k<8;k++){prop(.935,.08+k*.105,.14,.05,.1,.66,k%2?'#e9e1c9':'#efe8d4');prop(.932,.12+k*.105,.5,.004,.02,.03,'#9a8f78');}
+    if(side!=='west'){prop(.05,.66,.14,.07,.2,.66,'#a88a62');prop(.045,.65,.8,.085,.22,.035,'#c9b38a');}
+    prop(.025,.08,1.3,.012,.15,.32,'#2b3036');prop(.026,.085,1.31,.01,.14,.3,'#4d6a7a');
+    for(let i=0;i<2;i++)for(let j=0;j<2;j++)prop(.74+i*.08,side==='north'?.86:.05,.14+j*.34,.07,.08,.06,'#bf9a70'),prop(.75+i*.08,side==='north'?.87:.06,.14+j*.34,.008,.06,.34,steel);
+    for(const v of side==='north'?[.985]:[.005])for(let k=0;k<14;k++)prop(.06+k*.064,v,.98+(k%2?.03:0),.03,.006,.14,['#e0707a','#f1c74e','#6fb3c4','#9cc6a5'][k%4]);
+    if(booth){const sv=side==='north'?.06:side==='south'?.9:.48,su=side==='west'?.08:side==='east'?.88:.12;prop(su,sv,.14,.012,.012,.7,steel);prop(su-.02,sv-.004,.84,.06,.02,.3,accent);}
+    // Theme dressing on top of the shell.
+    const wall=side==='north'?.97:.012;
+    if(['arcade','slot','fortune','choice'].includes(theme)){
+     for(const [r,c] of [[.07,'#e9dfc6'],[.05,'#c45c4a'],[.03,'#e9dfc6'],[.012,'#c45c4a']])prop(.62-r/2,wall,1.0-r*3,r,.01,r*6,c);
+     prop(.84,.62,.14,.012,.012,.8,steel);for(let k=0;k<6;k++)prop(.81+(k%3)*.022,.6+Math.floor(k/3)*.03,.94,.02,.03,.06,['#e9a77f','#9cc6a5','#f1d27a','#a8bfe0','#e6a3b5','#c5b3e6'][k]);
+     for(let k=0;k<6;k++)prop(.4+(k%3)*.03,.9-Math.floor(k/3)*.03,.14,.014,.014,.2,'#f3f1ea');
+    }
+    if(theme==='board'){prop(.43,.22,.94,.03,.04,.32,'#d9b27a');prop(.6,.66,.94,.08,.06,.1,'#c96f5a');prop(.6,.66,1.04,.07,.05,.08,'#5f9d7d');prop(.6,.66,1.12,.06,.05,.07,'#6f8fc4');}
+    if(['dance','sing'].includes(theme)){prop(.42,.08,.14,.16,.08,.78,'#2f3438');prop(.44,.09,.92,.12,.06,.05,'#6f8fc4');for(const u of [.34,.62])prop(u,.08,.14,.05,.06,.9,'#1f2326');prop(.5,.5,1.5,.03,.03,.03,'#cfd6dd');}
+    if(['escape','horror','keys','maze','mission'].includes(theme)&&theme!=='mission'){for(let k=0;k<6;k++)prop(.08+k*.15,wall,.14,.13,.01,1.0,'#2b2f39');prop(.86,.4,.14,.08,.06,.3,'#6b5845');prop(.885,.44,.44,.03,.012,.05,'#c9a24a');}
+   }
    if(theme==='soccer'||theme==='race'){
     const field=theme==='soccer';
     prop(.20,.20,.149,.62,.60,.045,field?'#83aa86':'#52646b');
@@ -3453,6 +3499,16 @@ window.JusungBadges=(()=>{
  function chip(){$('themeChip')?.remove();if(!theme)return;const def=THEMES.find(t=>t[0]===theme);$('gridCount')?.insertAdjacentHTML('afterend','<button id="themeChip" class="theme-chip">'+def[1]+' '+def[2]+'만 보는 중 ✕</button>');$('themeChip').onclick=()=>window.JusungThemeFilter.set(null);}
  window.JusungThemeFilter={set(id){theme=id;setTab('list');renderLists();chip();$('list').scrollIntoView({block:'start',behavior:'smooth'});},get:()=>theme};
  const oldShow=dlg.showModal.bind(dlg);dlg.showModal=function(){render();return oldShow();};
+})();
+(()=>{
+ // Some viewers (e.g. a sandboxed preview pane) block <form> submission, which left the
+ // teacher password and save buttons doing nothing. Run the same handlers on click/Enter.
+ const run=form=>{if(typeof form.onsubmit==='function')form.onsubmit({preventDefault(){},target:form,currentTarget:form});};
+ for(const id of ['teacherAccessForm','editForm','guideForm','noticeForm']){
+  const form=$(id);if(!form||form.dataset.directSubmit)continue;form.dataset.directSubmit='1';
+  form.querySelectorAll('button[type=submit]').forEach(btn=>{btn.type='button';btn.addEventListener('click',()=>run(form));});
+  form.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing&&e.keyCode!==229&&e.target.tagName==='INPUT'&&e.target.type!=='checkbox'){e.preventDefault();run(form);}});
+ }
 })();
 
 </script></body></html>
